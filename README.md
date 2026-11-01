@@ -12,6 +12,8 @@ dependencies). Features:
 - Ghost piece, hard drop and soft drop
 - Hold slot (once per piece)
 - Score, line count and level progression (gravity speeds up every 10 lines)
+- Start menu (keyboard or mouse) with a how-to-play screen
+- Animated line clears: completed rows flash, shrink and fade before collapsing
 - Pause and restart
 
 ### Run
@@ -36,6 +38,8 @@ java -cp out com.sparegames.tetris.Tetris
 
 | Key | Action |
 | --- | --- |
+| Up / Down (menu) | Move menu selection |
+| Enter | Start / confirm (new game after game over) |
 | Left / Right | Move |
 | Down | Soft drop (hold to repeat) |
 | Space | Hard drop |
@@ -44,3 +48,4 @@ java -cp out com.sparegames.tetris.Tetris
 | C / Shift | Hold piece |
 | P | Pause / resume |
 | R | Restart |
+| Esc | Return to main menu |

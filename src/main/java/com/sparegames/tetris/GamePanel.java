@@ -17,6 +17,7 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.RoundRectangle2D;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -63,9 +64,33 @@ public final class GamePanel extends JPanel implements ActionListener {
     private static final Font TITLE_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 28);
     private static final Font OVERLAY_SCORE_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 18);
 
+    private static final Font MENU_TITLE_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 54);
+    private static final Font MENU_SUBTITLE_FONT = new Font(Font.SANS_SERIF, Font.PLAIN, 14);
+    private static final Font MENU_ITEM_FONT = new Font(Font.SANS_SERIF, Font.PLAIN, 17);
+    private static final Font MENU_ITEM_FOCUS_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 18);
+    private static final Font MENU_HEADER_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 22);
+    private static final Font MENU_TEXT_FONT = new Font(Font.SANS_SERIF, Font.PLAIN, 14);
+
+    private static final int MENU_ITEM_W = 300;
+    private static final int MENU_ITEM_H = 52;
+    private static final int MENU_ITEM_GAP = 14;
+    private static final int MENU_ITEM_TOP = 300;
+
+    private static final String[] MENU_ITEMS = {"开始游戏", "操作说明", "退出游戏"};
+
+    /** How long the line-clear animation runs before the rows collapse. */
+    private static final long CLEAR_ANIM_NS = 340_000_000L;
+
     private final Board board = new Board();
     private final Set<Integer> pressed = new HashSet<>();
     private final Timer timer;
+
+    private boolean menu = true;
+    private boolean menuHelp;
+    private int menuSelection;
+    private long menuAnimNs;
+    private long clearElapsedNs;
+    private boolean clearingActive;
 
     private boolean paused;
     private int repeatDir;
@@ -85,6 +110,9 @@ public final class GamePanel extends JPanel implements ActionListener {
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
+                if (menu) {
+                    handleMenuClick(e);
+                }
                 requestFocusInWindow();
             }
         });
@@ -107,6 +135,31 @@ public final class GamePanel extends JPanel implements ActionListener {
         long now = System.nanoTime();
         long delta = Math.min(now - lastTickNs, 50_000_000L);
         lastTickNs = now;
+
+        if (menu) {
+            menuAnimNs += delta;
+            repaint();
+            return;
+        }
+
+        if (board.isClearing()) {
+            // Freeze the playfield while the completed rows play their animation.
+            if (!clearingActive) {
+                clearingActive = true;
+                clearElapsedNs = 0;
+                resetDropTimers();
+            }
+            clearElapsedNs += delta;
+            if (clearElapsedNs >= CLEAR_ANIM_NS) {
+                board.finishClear();
+                clearingActive = false;
+                clearElapsedNs = 0;
+                resetDropTimers();
+            }
+            repaint();
+            return;
+        }
+        clearingActive = false;
 
         if (!paused && !board.isGameOver()) {
             updateHorizontalRepeat(now);
@@ -137,6 +190,10 @@ public final class GamePanel extends JPanel implements ActionListener {
             int code = event.getKeyCode();
             if (!pressed.add(code)) {
                 return; // OS auto-repeat, handled by our own DAS timer instead
+            }
+            if (menu) {
+                handleMenuKey(code);
+                return;
             }
             switch (code) {
                 case KeyEvent.VK_LEFT -> {
@@ -176,8 +233,14 @@ public final class GamePanel extends JPanel implements ActionListener {
                         resetDropTimers();
                     }
                 }
+                case KeyEvent.VK_ENTER -> {
+                    if (board.isGameOver()) {
+                        startGame();
+                    }
+                }
                 case KeyEvent.VK_P -> togglePause();
                 case KeyEvent.VK_R -> restart();
+                case KeyEvent.VK_ESCAPE -> returnToMenu();
                 default -> {
                 }
             }
@@ -190,7 +253,7 @@ public final class GamePanel extends JPanel implements ActionListener {
     }
 
     private boolean canPlay() {
-        return !paused && !board.isGameOver();
+        return !menu && !paused && !board.isGameOver() && !board.isClearing();
     }
 
     private boolean isDown(int keyCode) {
@@ -233,7 +296,7 @@ public final class GamePanel extends JPanel implements ActionListener {
     }
 
     private void togglePause() {
-        if (board.isGameOver()) {
+        if (board.isGameOver() || board.isClearing()) {
             return;
         }
         paused = !paused;
@@ -249,8 +312,95 @@ public final class GamePanel extends JPanel implements ActionListener {
         paused = false;
         pressed.clear();
         repeatDir = 0;
+        clearingActive = false;
+        clearElapsedNs = 0;
         resetDropTimers();
         lastTickNs = System.nanoTime();
+    }
+
+    // ------------------------------------------------------------- menu
+
+    private void startGame() {
+        board.reset();
+        menu = false;
+        menuHelp = false;
+        paused = false;
+        pressed.clear();
+        repeatDir = 0;
+        clearingActive = false;
+        clearElapsedNs = 0;
+        resetDropTimers();
+        lastTickNs = System.nanoTime();
+        requestFocusInWindow();
+    }
+
+    private void returnToMenu() {
+        board.reset();
+        menu = true;
+        menuHelp = false;
+        menuSelection = 0;
+        paused = false;
+        pressed.clear();
+        repeatDir = 0;
+        clearingActive = false;
+        clearElapsedNs = 0;
+        resetDropTimers();
+        lastTickNs = System.nanoTime();
+    }
+
+    private void handleMenuKey(int code) {
+        if (menuHelp) {
+            if (code == KeyEvent.VK_ENTER || code == KeyEvent.VK_ESCAPE || code == KeyEvent.VK_SPACE) {
+                menuHelp = false;
+            }
+            return;
+        }
+        switch (code) {
+            case KeyEvent.VK_UP, KeyEvent.VK_W ->
+                    menuSelection = (menuSelection + MENU_ITEMS.length - 1) % MENU_ITEMS.length;
+            case KeyEvent.VK_DOWN, KeyEvent.VK_S ->
+                    menuSelection = (menuSelection + 1) % MENU_ITEMS.length;
+            case KeyEvent.VK_ENTER, KeyEvent.VK_SPACE -> activateMenuItem();
+            case KeyEvent.VK_ESCAPE -> {
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void activateMenuItem() {
+        switch (menuSelection) {
+            case 0 -> startGame();
+            case 1 -> menuHelp = true;
+            case 2 -> System.exit(0);
+            default -> {
+            }
+        }
+    }
+
+    private void handleMenuClick(MouseEvent event) {
+        if (menuHelp) {
+            menuHelp = false;
+            return;
+        }
+        for (int i = 0; i < MENU_ITEMS.length; i++) {
+            int itemY = menuItemY(i);
+            int itemX = menuItemX();
+            if (event.getX() >= itemX && event.getX() < itemX + MENU_ITEM_W
+                    && event.getY() >= itemY && event.getY() < itemY + MENU_ITEM_H) {
+                menuSelection = i;
+                activateMenuItem();
+                return;
+            }
+        }
+    }
+
+    private int menuItemY(int index) {
+        return MENU_ITEM_TOP + index * (MENU_ITEM_H + MENU_ITEM_GAP);
+    }
+
+    private int menuItemX() {
+        return (getWidth() - MENU_ITEM_W) / 2;
     }
 
     private void resetDropTimers() {
@@ -278,11 +428,15 @@ public final class GamePanel extends JPanel implements ActionListener {
             drawBoard(g);
             drawSidePanel(g);
 
-            if (paused) {
-                drawPauseOverlay(g);
-            }
-            if (board.isGameOver()) {
-                drawGameOverOverlay(g);
+            if (menu) {
+                drawMenu(g);
+            } else {
+                if (paused && !board.isGameOver()) {
+                    drawPauseOverlay(g);
+                }
+                if (board.isGameOver()) {
+                    drawGameOverOverlay(g);
+                }
             }
         } finally {
             g.dispose();
@@ -310,12 +464,19 @@ public final class GamePanel extends JPanel implements ActionListener {
         }
 
         for (int row = Board.HIDDEN_ROWS; row < Board.HEIGHT; row++) {
+            if (board.isClearingRow(row)) {
+                continue; // drawn by the clear animation instead
+            }
             for (int column = 0; column < Board.WIDTH; column++) {
                 int color = board.cellColor(row, column);
                 if (color != 0) {
                     drawBlock(g, cellX(column), cellY(row), CELL, color, false);
                 }
             }
+        }
+
+        if (board.isClearing()) {
+            drawClearEffect(g, Math.min(1f, clearElapsedNs / (float) CLEAR_ANIM_NS));
         }
 
         if (!board.isGameOver()) {
@@ -368,6 +529,69 @@ public final class GamePanel extends JPanel implements ActionListener {
         g.setColor(new Color(0, 0, 0, 120));
         g.setStroke(new BasicStroke(1f));
         g.drawRoundRect(x + 1, y + 1, size - 2, size - 2, 7, 7);
+    }
+
+    /**
+     * Line-clear animation: the blocks first flash white, then shrink towards
+     * their centre and fade out while a bright bar sweeps across the row.
+     */
+    private void drawClearEffect(Graphics2D g, float progress) {
+        List<Integer> rows = board.clearingRows();
+        if (rows.isEmpty()) {
+            return;
+        }
+
+        float flash = Math.min(1f, progress / 0.42f);
+        float fade = progress <= 0.42f ? 0f : (progress - 0.42f) / 0.58f;
+        float scale = 1f - fade * 0.92f;
+        int alpha = Math.round(255 * (1f - fade));
+
+        for (int row : rows) {
+            int top = cellY(row);
+            if (top < BOARD_Y || top + CELL > BOARD_Y + BOARD_H) {
+                continue;
+            }
+
+            for (int column = 0; column < Board.WIDTH; column++) {
+                int rgb = board.cellColor(row, column);
+                if (rgb != 0) {
+                    drawClearingBlock(g, cellX(column), top, rgb, flash, scale, alpha);
+                }
+            }
+
+            int centerY = top + CELL / 2;
+            int beamHeight = Math.max(3, Math.round(CELL * 0.22f * (1f - fade * 0.6f)));
+            g.setColor(new Color(255, 255, 255, Math.round(210 * (1f - fade))));
+            g.fillRoundRect(BOARD_X + 1, centerY - beamHeight / 2,
+                    BOARD_W - 2, beamHeight, beamHeight, beamHeight);
+        }
+    }
+
+    private void drawClearingBlock(Graphics2D g, int x, int y, int rgb,
+            float flash, float scale, int alpha) {
+        float size = CELL * scale;
+        if (size < 2.5f || alpha <= 0) {
+            return;
+        }
+        float bx = x + (CELL - size) / 2f;
+        float by = y + (CELL - size) / 2f;
+        float arc = Math.max(2f, size / 4f);
+        float inset = Math.min(1f, size / 6f);
+
+        Color base = new Color(rgb, true);
+        g.setColor(new Color(
+                Math.round(base.getRed() + (255 - base.getRed()) * flash * 0.85f),
+                Math.round(base.getGreen() + (255 - base.getGreen()) * flash * 0.85f),
+                Math.round(base.getBlue() + (255 - base.getBlue()) * flash * 0.85f),
+                alpha));
+        g.fill(new RoundRectangle2D.Float(bx + inset, by + inset,
+                size - inset * 2, size - inset * 2, arc, arc));
+
+        if (flash > 0.02f) {
+            g.setColor(new Color(255, 255, 255, Math.round(alpha * flash * 0.55f)));
+            g.fill(new RoundRectangle2D.Float(bx + inset, by + inset,
+                    size - inset * 2, size - inset * 2, arc, arc));
+        }
     }
 
     private void drawSidePanel(Graphics2D g) {
@@ -460,6 +684,146 @@ public final class GamePanel extends JPanel implements ActionListener {
         g.drawString(value, SIDE_X + SIDE_W - metrics.stringWidth(value), baseline);
     }
 
+    // ------------------------------------------------------------- menu
+
+    private void drawMenu(Graphics2D g) {
+        int width = getWidth();
+        int centerX = width / 2;
+        float seconds = menuAnimNs / 1_000_000_000f;
+
+        g.setColor(new Color(3, 3, 9, 236));
+        g.fillRect(0, 0, width, getHeight());
+
+        drawMenuDecor(g, seconds);
+
+        // Title with a soft neon glow.
+        g.setFont(MENU_TITLE_FONT);
+        FontMetrics titleMetrics = g.getFontMetrics();
+        int titleWidth = titleMetrics.stringWidth("TETRIS");
+        int titleX = centerX - titleWidth / 2;
+        int titleBaseline = 236;
+
+        g.setColor(new Color(53, 224, 255, 55));
+        g.drawString("TETRIS", titleX + 2, titleBaseline + 2);
+        g.drawString("TETRIS", titleX - 2, titleBaseline - 2);
+        g.setPaint(new GradientPaint(titleX, titleBaseline - 42,
+                new Color(0xFFB6F8FF), titleX, titleBaseline, ACCENT));
+        g.drawString("TETRIS", titleX, titleBaseline);
+
+        float pulse = (float) (0.5 + 0.5 * Math.sin(seconds * 2.6));
+        g.setColor(new Color(53, 224, 255, (int) (90 + 130 * pulse)));
+        g.fillRoundRect(centerX - titleWidth / 2 - 24, titleBaseline + 16, titleWidth + 48, 3, 3, 3);
+
+        g.setFont(MENU_SUBTITLE_FONT);
+        g.setColor(LABEL);
+        drawCentered(g, "经典方块消除 · 挑战更高分", centerX, titleBaseline + 42);
+
+        int itemX = menuItemX();
+        for (int i = 0; i < MENU_ITEMS.length; i++) {
+            boolean selected = i == menuSelection;
+            int itemY = menuItemY(i);
+
+            if (selected) {
+                g.setColor(new Color(53, 224, 255, 26));
+                g.fillRoundRect(itemX - 6, itemY - 6, MENU_ITEM_W + 12, MENU_ITEM_H + 12, 18, 18);
+            }
+
+            g.setColor(selected ? new Color(20, 20, 32, 225) : new Color(13, 13, 21, 205));
+            g.fillRoundRect(itemX, itemY, MENU_ITEM_W, MENU_ITEM_H, 14, 14);
+
+            g.setStroke(new BasicStroke(selected ? 2f : 1f));
+            g.setColor(selected ? ACCENT : BORDER);
+            g.drawRoundRect(itemX, itemY, MENU_ITEM_W, MENU_ITEM_H, 14, 14);
+
+            g.setFont(selected ? MENU_ITEM_FOCUS_FONT : MENU_ITEM_FONT);
+            g.setColor(selected ? TEXT : HINT);
+            FontMetrics metrics = g.getFontMetrics();
+            int textX = centerX - metrics.stringWidth(MENU_ITEMS[i]) / 2;
+            int textY = itemY + (MENU_ITEM_H + metrics.getAscent() - metrics.getDescent()) / 2;
+            g.drawString(MENU_ITEMS[i], textX, textY);
+
+            if (selected) {
+                g.setColor(ACCENT);
+                g.fillOval(itemX + 16, itemY + MENU_ITEM_H / 2 - 3, 6, 6);
+            }
+        }
+
+        g.setFont(HINT_FONT);
+        g.setColor(LABEL);
+        drawCentered(g, "↑ ↓ 选择      ENTER 确认      也可用鼠标点击", centerX, 560);
+
+        if (menuHelp) {
+            drawMenuHelp(g);
+        }
+    }
+
+    /** Small animated row of tetromino colours above the title. */
+    private void drawMenuDecor(Graphics2D g, float seconds) {
+        Tetromino[] types = Tetromino.values();
+        int blockSize = 18;
+        int gap = 12;
+        int total = types.length * blockSize + (types.length - 1) * gap;
+        int startX = getWidth() / 2 - total / 2;
+        int baseY = 150;
+
+        for (int i = 0; i < types.length; i++) {
+            int bob = Math.round((float) Math.sin(seconds * 2.4f + i * 0.55f) * 5f);
+            int x = startX + i * (blockSize + gap);
+            int y = baseY + bob;
+
+            g.setColor(new Color(types[i].rgb, true));
+            g.fillRoundRect(x, y, blockSize, blockSize, 5, 5);
+            g.setColor(new Color(255, 255, 255, 60));
+            g.fillRoundRect(x + 3, y + 3, blockSize - 6, 3, 2, 2);
+        }
+    }
+
+    private void drawMenuHelp(Graphics2D g) {
+        int width = getWidth();
+        int height = getHeight();
+
+        g.setColor(new Color(3, 3, 8, 218));
+        g.fillRect(0, 0, width, height);
+
+        int boxX = 62;
+        int boxY = 92;
+        int boxW = width - boxX * 2;
+        int boxH = height - boxY * 2 - 52;
+
+        g.setColor(new Color(16, 16, 26, 246));
+        g.fillRoundRect(boxX, boxY, boxW, boxH, 18, 18);
+        g.setColor(ACCENT);
+        g.setStroke(new BasicStroke(1.4f));
+        g.drawRoundRect(boxX, boxY, boxW, boxH, 18, 18);
+
+        g.setFont(MENU_HEADER_FONT);
+        g.setColor(TEXT);
+        drawCentered(g, "操作说明", width / 2, boxY + 50);
+
+        g.setColor(ACCENT);
+        g.fillRoundRect(width / 2 - 36, boxY + 62, 72, 2, 2, 2);
+
+        String[] lines = {
+                "← →  左右移动",
+                "↓  软降（每格 +1 分）",
+                "SPACE  硬降（每格 +2 分）",
+                "↑ / X  顺时针旋转    Z  逆时针旋转",
+                "C / SHIFT  暂存方块",
+                "P  暂停 / 继续      R  重新开始",
+                "ESC  返回主菜单",
+                "消除整行即可得分，一次消除多行分数更高"};
+        g.setFont(MENU_TEXT_FONT);
+        g.setColor(HINT);
+        int textX = boxX + 34;
+        for (int i = 0; i < lines.length; i++) {
+            g.drawString(lines[i], textX, boxY + 104 + i * 36);
+        }
+
+        g.setFont(HINT_FONT);
+        g.setColor(LABEL);
+        drawCentered(g, "按 ENTER 或 ESC 返回", width / 2, boxY + boxH - 24);
+    }
+
     private void drawPauseOverlay(Graphics2D g) {
         int centerX = BOARD_X + BOARD_W / 2;
         int centerY = BOARD_Y + BOARD_H / 2;
@@ -473,7 +837,7 @@ public final class GamePanel extends JPanel implements ActionListener {
 
         g.setFont(HINT_FONT);
         g.setColor(LABEL);
-        drawCentered(g, "Press P to resume", centerX, centerY + 28);
+        drawCentered(g, "Press P to resume  ·  ESC for menu", centerX, centerY + 28);
     }
 
     private void drawGameOverOverlay(Graphics2D g) {
@@ -493,7 +857,7 @@ public final class GamePanel extends JPanel implements ActionListener {
 
         g.setFont(HINT_FONT);
         g.setColor(LABEL);
-        drawCentered(g, "Press R to restart", centerX, centerY + 44);
+        drawCentered(g, "R restart  ·  ENTER new game  ·  ESC menu", centerX, centerY + 44);
     }
 
     private void drawCentered(Graphics2D g, String text, int centerX, int baselineY) {

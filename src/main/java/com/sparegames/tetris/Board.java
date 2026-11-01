@@ -42,6 +42,9 @@ public final class Board {
     private int lines;
     private int level;
 
+    /** Full rows waiting for the clear animation to finish before being removed. */
+    private List<Integer> pendingClearRows = Collections.emptyList();
+
     public Board() {
         this(new Random());
     }
@@ -65,6 +68,7 @@ public final class Board {
         score = 0;
         lines = 0;
         level = 1;
+        pendingClearRows = Collections.emptyList();
         spawnNext();
     }
 
@@ -98,6 +102,20 @@ public final class Board {
         return lines;
     }
 
+    /** True while full rows are being animated out before they collapse. */
+    public boolean isClearing() {
+        return !pendingClearRows.isEmpty();
+    }
+
+    /** Rows that are currently playing the clear animation. */
+    public List<Integer> clearingRows() {
+        return pendingClearRows;
+    }
+
+    public boolean isClearingRow(int row) {
+        return pendingClearRows.contains(row);
+    }
+
     /** ARGB colour of the locked block at the given row/column, or 0 when empty. */
     public int cellColor(int row, int column) {
         if (row < 0 || row >= HEIGHT || column < 0 || column >= WIDTH) {
@@ -121,7 +139,7 @@ public final class Board {
 
     /** The current piece dropped as far as it can go without locking. */
     public Piece ghostPiece() {
-        if (current == null) {
+        if (current == null || isClearing()) {
             return null;
         }
         Piece ghost = current;
@@ -135,7 +153,7 @@ public final class Board {
 
     /** Moves the current piece, returning false when blocked. */
     public boolean move(int dx, int dy) {
-        if (gameOver || current == null) {
+        if (gameOver || current == null || isClearing()) {
             return false;
         }
         Piece moved = current.moved(dx, dy);
@@ -151,7 +169,7 @@ public final class Board {
      * blocked.
      */
     public boolean rotate(boolean clockwise) {
-        if (gameOver || current == null) {
+        if (gameOver || current == null || isClearing()) {
             return false;
         }
         Piece rotated = current.rotated(current.rotation + (clockwise ? 1 : -1));
@@ -167,7 +185,7 @@ public final class Board {
 
     /** One gravity step: falls by one row, or locks when the piece has landed. */
     public void gravity() {
-        if (gameOver || current == null) {
+        if (gameOver || current == null || isClearing()) {
             return;
         }
         if (!move(0, 1)) {
@@ -177,7 +195,7 @@ public final class Board {
 
     /** Player-initiated fast drop. Awards one point per row fallen. */
     public boolean softDrop() {
-        if (gameOver || current == null) {
+        if (gameOver || current == null || isClearing()) {
             return false;
         }
         if (move(0, 1)) {
@@ -190,7 +208,7 @@ public final class Board {
 
     /** Drops the piece instantly and locks it. Awards two points per row dropped. */
     public int hardDrop() {
-        if (gameOver || current == null) {
+        if (gameOver || current == null || isClearing()) {
             return 0;
         }
         int distance = 0;
@@ -204,7 +222,7 @@ public final class Board {
 
     /** Swaps the current piece with the hold slot; allowed once per piece. */
     public boolean hold() {
-        if (gameOver || current == null || holdUsed) {
+        if (gameOver || current == null || holdUsed || isClearing()) {
             return false;
         }
         Tetromino swapped = holdType;
@@ -266,7 +284,7 @@ public final class Board {
     }
 
     private void lock() {
-        if (current == null) {
+        if (current == null || isClearing()) {
             return;
         }
         for (Piece.Cell cell : current.cells()) {
@@ -274,31 +292,60 @@ public final class Board {
                 grid[cell.y()][cell.x()] = current.type.rgb;
             }
         }
-        int cleared = clearLines();
+        current = null;
+
+        List<Integer> fullRows = findFullRows();
+        if (!fullRows.isEmpty()) {
+            // Keep the completed rows on the grid so the renderer can animate
+            // them away; the actual collapse happens in finishClear().
+            pendingClearRows = fullRows;
+        } else if (!gameOver) {
+            spawnNext();
+        }
+    }
+
+    /**
+     * Called once the clear animation has played: removes the completed rows,
+     * awards the score and spawns the next piece.
+     */
+    public void finishClear() {
+        if (pendingClearRows.isEmpty()) {
+            return;
+        }
+        int cleared = pendingClearRows.size();
+        pendingClearRows = Collections.emptyList();
+        collapseRows();
         addScore(cleared);
         if (!gameOver) {
             spawnNext();
         }
     }
 
+    private List<Integer> findFullRows() {
+        List<Integer> rows = new ArrayList<>(4);
+        for (int row = HEIGHT - 1; row >= 0; row--) {
+            if (isFull(row)) {
+                rows.add(row);
+            }
+        }
+        return rows;
+    }
+
     /** Removes completed rows, shifting everything above them down. */
-    private int clearLines() {
-        int cleared = 0;
+    private void collapseRows() {
         int writeRow = HEIGHT - 1;
         for (int readRow = HEIGHT - 1; readRow >= 0; readRow--) {
             if (isFull(readRow)) {
-                cleared++;
-            } else {
-                if (writeRow != readRow) {
-                    System.arraycopy(grid[readRow], 0, grid[writeRow], 0, WIDTH);
-                }
-                writeRow--;
+                continue;
             }
+            if (writeRow != readRow) {
+                System.arraycopy(grid[readRow], 0, grid[writeRow], 0, WIDTH);
+            }
+            writeRow--;
         }
         for (int row = writeRow; row >= 0; row--) {
             Arrays.fill(grid[row], 0);
         }
-        return cleared;
     }
 
     private boolean isFull(int row) {
