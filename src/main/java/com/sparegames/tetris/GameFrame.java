@@ -10,7 +10,7 @@ public final class GameFrame extends JFrame {
     private static final long serialVersionUID = 1L;
 
     public GameFrame() {
-        super("Tetris");
+        super("俄罗斯方块");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setContentPane(new GamePanel());
         pack();

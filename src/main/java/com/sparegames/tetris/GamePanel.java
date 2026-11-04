@@ -77,6 +77,7 @@ public final class GamePanel extends JPanel implements ActionListener {
     private static final int MENU_ITEM_TOP = 300;
 
     private static final String[] MENU_ITEMS = {"开始游戏", "操作说明", "退出游戏"};
+    private static final String MENU_TITLE = "俄罗斯方块";
 
     /** How long the line-clear animation runs before the rows collapse. */
     private static final long CLEAR_ANIM_NS = 340_000_000L;
@@ -597,34 +598,34 @@ public final class GamePanel extends JPanel implements ActionListener {
     private void drawSidePanel(Graphics2D g) {
         g.setFont(LABEL_FONT);
         g.setColor(LABEL);
-        g.drawString("HOLD", SIDE_X, 36);
+        g.drawString("暂存", SIDE_X, 36);
 
         drawPreviewBox(g, SIDE_X, 46, SIDE_W, 78, board.getHoldType());
 
         g.setFont(LABEL_FONT);
         g.setColor(LABEL);
-        g.drawString("NEXT", SIDE_X, 156);
+        g.drawString("下一个", SIDE_X, 156);
 
         List<Tetromino> next = board.nextPieces();
         for (int i = 0; i < next.size(); i++) {
             drawPreviewBox(g, SIDE_X, 166 + i * 88, SIDE_W, 78, next.get(i));
         }
 
-        drawStat(g, "SCORE", String.valueOf(board.getScore()), 458);
-        drawStat(g, "LEVEL", String.valueOf(board.getLevel()), 490);
-        drawStat(g, "LINES", String.valueOf(board.getLines()), 522);
+        drawStat(g, "得分", String.valueOf(board.getScore()), 458);
+        drawStat(g, "等级", String.valueOf(board.getLevel()), 490);
+        drawStat(g, "消除行数", String.valueOf(board.getLines()), 522);
 
         g.setFont(LABEL_FONT);
         g.setColor(LABEL);
-        g.drawString("CONTROLS", SIDE_X, 560);
+        g.drawString("操作", SIDE_X, 560);
 
         g.setFont(HINT_FONT);
         g.setColor(HINT);
         String[] controls = {
-                "\u2190\u2192 move    \u2193 soft drop",
-                "SPACE hard drop",
-                "\u2191/X rotate    Z back",
-                "C hold   P pause   R restart"};
+                "\u2190\u2192 移动    \u2193 软降",
+                "SPACE 硬降",
+                "\u2191/X 旋转    Z 反向旋转",
+                "C 暂存  P 暂停  R 重开"};
         for (int i = 0; i < controls.length; i++) {
             g.drawString(controls[i], SIDE_X, 582 + i * 18);
         }
@@ -691,7 +692,7 @@ public final class GamePanel extends JPanel implements ActionListener {
         int centerX = width / 2;
         float seconds = menuAnimNs / 1_000_000_000f;
 
-        g.setColor(new Color(3, 3, 9, 236));
+        g.setColor(new Color(3, 3, 9, 246));
         g.fillRect(0, 0, width, getHeight());
 
         drawMenuDecor(g, seconds);
@@ -699,16 +700,16 @@ public final class GamePanel extends JPanel implements ActionListener {
         // Title with a soft neon glow.
         g.setFont(MENU_TITLE_FONT);
         FontMetrics titleMetrics = g.getFontMetrics();
-        int titleWidth = titleMetrics.stringWidth("TETRIS");
+        int titleWidth = titleMetrics.stringWidth(MENU_TITLE);
         int titleX = centerX - titleWidth / 2;
         int titleBaseline = 236;
 
         g.setColor(new Color(53, 224, 255, 55));
-        g.drawString("TETRIS", titleX + 2, titleBaseline + 2);
-        g.drawString("TETRIS", titleX - 2, titleBaseline - 2);
+        g.drawString(MENU_TITLE, titleX + 2, titleBaseline + 2);
+        g.drawString(MENU_TITLE, titleX - 2, titleBaseline - 2);
         g.setPaint(new GradientPaint(titleX, titleBaseline - 42,
                 new Color(0xFFB6F8FF), titleX, titleBaseline, ACCENT));
-        g.drawString("TETRIS", titleX, titleBaseline);
+        g.drawString(MENU_TITLE, titleX, titleBaseline);
 
         float pulse = (float) (0.5 + 0.5 * Math.sin(seconds * 2.6));
         g.setColor(new Color(53, 224, 255, (int) (90 + 130 * pulse)));
@@ -716,7 +717,7 @@ public final class GamePanel extends JPanel implements ActionListener {
 
         g.setFont(MENU_SUBTITLE_FONT);
         g.setColor(LABEL);
-        drawCentered(g, "经典方块消除 · 挑战更高分", centerX, titleBaseline + 42);
+        drawCentered(g, "TETRIS · 经典方块消除 · 挑战更高分", centerX, titleBaseline + 42);
 
         int itemX = menuItemX();
         for (int i = 0; i < MENU_ITEMS.length; i++) {
@@ -782,7 +783,7 @@ public final class GamePanel extends JPanel implements ActionListener {
         int width = getWidth();
         int height = getHeight();
 
-        g.setColor(new Color(3, 3, 8, 218));
+        g.setColor(new Color(3, 3, 8, 228));
         g.fillRect(0, 0, width, height);
 
         int boxX = 62;
@@ -833,11 +834,11 @@ public final class GamePanel extends JPanel implements ActionListener {
 
         g.setFont(TITLE_FONT);
         g.setColor(TEXT);
-        drawCentered(g, "PAUSED", centerX, centerY - 2);
+        drawCentered(g, "已暂停", centerX, centerY - 2);
 
         g.setFont(HINT_FONT);
         g.setColor(LABEL);
-        drawCentered(g, "Press P to resume  ·  ESC for menu", centerX, centerY + 28);
+        drawCentered(g, "按 P 继续  ·  ESC 返回菜单", centerX, centerY + 28);
     }
 
     private void drawGameOverOverlay(Graphics2D g) {
@@ -849,15 +850,16 @@ public final class GamePanel extends JPanel implements ActionListener {
 
         g.setFont(TITLE_FONT);
         g.setColor(new Color(0xFFFF6B6B));
-        drawCentered(g, "GAME OVER", centerX, centerY - 22);
+        drawCentered(g, "游戏结束", centerX, centerY - 22);
 
         g.setFont(OVERLAY_SCORE_FONT);
         g.setColor(TEXT);
-        drawCentered(g, "Score  " + board.getScore(), centerX, centerY + 14);
+        drawCentered(g, "得分  " + board.getScore(), centerX, centerY + 14);
 
         g.setFont(HINT_FONT);
         g.setColor(LABEL);
-        drawCentered(g, "R restart  ·  ENTER new game  ·  ESC menu", centerX, centerY + 44);
+        drawCentered(g, "R 重新开始  ·  ENTER 新对局", centerX, centerY + 44);
+        drawCentered(g, "ESC 返回菜单", centerX, centerY + 62);
     }
 
     private void drawCentered(Graphics2D g, String text, int centerX, int baselineY) {
